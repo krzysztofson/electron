@@ -3,30 +3,61 @@ import { join } from "path";
 
 function createWindow() {
   const mainWindow = new BrowserWindow({
-    width: 1200,
+    width: 800,
     height: 600,
     alwaysOnTop: true,
     skipTaskbar: true,
     transparent: true,
-    backgroundColor: "#000", // RGBA fully transparent
+    backgroundColor: "#000",
     frame: false,
+    hasShadow: false,
+    enableLargerThanScreen: true,
+    titleBarStyle: "hidden",
+    titleBarOverlay: false,
     webPreferences: {
       preload: join(__dirname, "preload.js"),
       nodeIntegration: false,
       contextIsolation: true,
+      backgroundThrottling: false,
     },
   });
 
-  // Set initial opacity
   mainWindow.setOpacity(0.9);
+  mainWindow.setWindowButtonVisibility(false);
+  mainWindow.setContentProtection(true);
 
   if (process.env.NODE_ENV === "development") {
     const rendererPort = process.argv[2];
     mainWindow.loadURL(`http://localhost:${rendererPort}`);
-    mainWindow.webContents.openDevTools();
+    // mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(join(app.getAppPath(), "renderer", "index.html"));
   }
+
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    if (input.type === "keyDown" && input.control) {
+      // Check if Control key is pressed
+      const { x, y } = mainWindow.getBounds(); // Get current window position
+      switch (input.key) {
+        case "ArrowUp":
+          mainWindow.setBounds({ x, y: y - 50, width: 1200, height: 600 });
+          event.preventDefault();
+          break;
+        case "ArrowDown":
+          mainWindow.setBounds({ x, y: y + 50, width: 1200, height: 600 });
+          event.preventDefault();
+          break;
+        case "ArrowLeft":
+          mainWindow.setBounds({ x: x - 50, y, width: 1200, height: 600 });
+          event.preventDefault();
+          break;
+        case "ArrowRight":
+          mainWindow.setBounds({ x: x + 50, y, width: 1200, height: 600 });
+          event.preventDefault();
+          break;
+      }
+    }
+  });
 }
 
 app.whenReady().then(() => {
