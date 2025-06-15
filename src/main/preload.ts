@@ -11,4 +11,25 @@ contextBridge.exposeInMainWorld("electronAPI", {
       throw error;
     }
   },
+  analyzeScreenshot: async (screenshotDataUrl: string) => {
+    try {
+      const result = await ipcRenderer.invoke(
+        "analyze-screenshot",
+        screenshotDataUrl
+      );
+      return result;
+    } catch (error) {
+      console.error("❌ Error in preload analyzeScreenshot:", error);
+      throw error;
+    }
+  },
+  onF5Press: (callback: () => void) => {
+    const listener = (_event: Electron.IpcRendererEvent) => {
+      callback();
+    };
+    ipcRenderer.on("f5-pressed", listener);
+    return () => {
+      ipcRenderer.removeListener("f5-pressed", listener);
+    };
+  },
 });
