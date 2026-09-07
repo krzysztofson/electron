@@ -1,22 +1,31 @@
 <script setup lang="ts">
+import { toRef } from "vue";
 import { useScreenshots } from "@/composables/useScreenshots";
 import AppButton from "@/components/ui/AppButton.vue";
 import PanelSection from "@/components/ui/PanelSection.vue";
 import StatusBanner from "@/components/ui/StatusBanner.vue";
+import GroupAnalysisCard from "./GroupAnalysisCard.vue";
 import ScreenshotCard from "./ScreenshotCard.vue";
 
-const props = defineProps<{ configured: boolean }>();
+const props = defineProps<{ configured: boolean; presetId: string }>();
 
 const {
   screenshots,
+  groups,
   isCapturing,
   captureError,
   total,
+  selectedCount,
   capture,
   analyze,
+  askFollowUp,
+  analyzeSelected,
+  askGroupFollowUp,
+  toggleSelected,
   remove,
+  removeGroup,
   clear,
-} = useScreenshots();
+} = useScreenshots(toRef(props, "presetId"));
 </script>
 
 <template>
@@ -24,6 +33,14 @@ const {
     <template #actions>
       <AppButton v-if="total > 0" variant="ghost" size="sm" @click="clear">
         Clear
+      </AppButton>
+      <AppButton
+        v-if="selectedCount >= 2"
+        variant="primary"
+        size="sm"
+        @click="analyzeSelected"
+      >
+        Analyze {{ selectedCount }} together
       </AppButton>
       <AppButton
         variant="primary"
@@ -45,8 +62,17 @@ const {
     </StatusBanner>
 
     <p v-if="total === 0" class="empty">
-      Press <kbd>F5</kbd> to capture and analyze in one step.
+      Press <kbd>F5</kbd> to capture and analyze in one step, or select two or
+      more screenshots below to analyze them as one question.
     </p>
+
+    <GroupAnalysisCard
+      v-for="group in groups"
+      :key="group.id"
+      :group="group"
+      @remove="removeGroup"
+      @follow-up="askGroupFollowUp"
+    />
 
     <ScreenshotCard
       v-for="screenshot in screenshots"
@@ -54,6 +80,8 @@ const {
       :screenshot="screenshot"
       @analyze="analyze"
       @remove="remove"
+      @toggle-selected="toggleSelected"
+      @follow-up="askFollowUp"
     />
   </PanelSection>
 </template>

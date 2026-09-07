@@ -14,6 +14,11 @@ const GLOBAL_SHORTCUTS = [
   { keys: ["F6"], label: "Move overlay right" },
   { keys: ["Ctrl", "F6"], label: "Move overlay left" },
   { keys: ["Ctrl", "↑↓←→"], label: "Nudge overlay (while focused)" },
+  { keys: ["F7"], label: "Hide / show the overlay" },
+  {
+    keys: ["F8"],
+    label: "Toggle click-through (clicks pass to what's behind)",
+  },
 ];
 
 const SCREEN_ACTIONS = [
@@ -21,6 +26,18 @@ const SCREEN_ACTIONS = [
   {
     label: "Analyze",
     detail: "Send a screenshot to the AI for a written answer",
+  },
+  {
+    label: "Checkbox + Analyze N together",
+    detail: "Select 2+ screenshots and analyze them as one question",
+  },
+  {
+    label: "Ask a follow-up",
+    detail: "Continue an answered screenshot without resending the image",
+  },
+  {
+    label: "Preset switcher (header)",
+    detail: "Shapes the answer for the kind of problem on screen",
   },
   { label: "× (on a screenshot)", detail: "Delete just that screenshot" },
   { label: "Clear", detail: "Delete every screenshot" },

@@ -1,14 +1,21 @@
 import { ipcMain } from "electron";
 import { config } from "../config";
 import { createLogger } from "../logger";
+import { listPresetSummaries } from "../analysis-presets";
 import {
   EventChannel,
   InvokeChannel,
   SendChannel,
+  type AnalysisResult,
+  type AnalyzeScreenshotRequest,
   type AppStatus,
+  type AskFollowUpRequest,
 } from "../shared/ipc";
-import { capturePrimaryScreen } from "../services/screen-capture";
-import { analyzeScreenshot } from "../services/screenshot-analysis";
+import { captureCurrentScreen } from "../services/screen-capture";
+import {
+  analyzeScreenshot,
+  askFollowUp,
+} from "../services/screenshot-analysis";
 import { transcriptionService } from "../services/transcription/gemini-live";
 import { sendToOverlay } from "../window/overlay-window";
 
@@ -32,14 +39,37 @@ export function registerIpcHandlers(): void {
       transcriptionConfigured: Boolean(config.geminiApiKey),
       analysisModel: config.analysisModel,
       transcriptionModel: config.transcriptionModel,
+      presets: listPresetSummaries(),
+      defaultPresetId: config.analysisPreset,
     };
   });
 
-  ipcMain.handle(InvokeChannel.CaptureScreen, () => capturePrimaryScreen());
+  ipcMain.handle(InvokeChannel.CaptureScreen, () => captureCurrentScreen());
 
   ipcMain.handle(
     InvokeChannel.AnalyzeScreenshot,
-    (_event, screenshotDataUrl: string) => analyzeScreenshot(screenshotDataUrl),
+    (_event, request: AnalyzeScreenshotRequest): Promise<AnalysisResult> =>
+      analyzeScreenshot(request.dataUrls, request.presetId, (delta) =>
+        sendToOverlay(EventChannel.AnalysisChunk, {
+          analysisId: request.analysisId,
+          delta,
+        }),
+      ),
+  );
+
+  ipcMain.handle(
+    InvokeChannel.AskFollowUp,
+    (_event, request: AskFollowUpRequest): Promise<AnalysisResult> =>
+      askFollowUp(
+        request.previousResponseId,
+        request.question,
+        request.presetId,
+        (delta) =>
+          sendToOverlay(EventChannel.AnalysisChunk, {
+            analysisId: request.analysisId,
+            delta,
+          }),
+      ),
   );
 
   ipcMain.handle(InvokeChannel.StartTranscription, () =>

@@ -41,9 +41,14 @@ const log = createLogger("overlay-window");
  *    deliberately pushes the window past the bottom of the work area. It is a
  *    macOS-only option; removing it changes the geometry.
  *
+ * 5. `toggleOverlayVisibility()` below re-applies `setContentProtection(true)`
+ *    immediately after every `show()`. On Windows `SetWindowDisplayAffinity` is
+ *    bound to the HWND lifetime, not guaranteed to survive a hide/show cycle --
+ *    do not "simplify" this by calling `setContentProtection` only once at
+ *    creation.
+ *
  * `setContentProtection` is called synchronously right after construction and
- * before `loadURL`. If this ever moves to `show: false` + `.show()`, re-apply
- * it after `show()` -- on Windows the affinity is bound to the HWND lifetime.
+ * before `loadURL`.
  */
 
 let overlayWindow: BrowserWindow | null = null;
@@ -64,6 +69,10 @@ export function createOverlayWindow(): BrowserWindow {
     frame: true,
     hasShadow: false,
     enableLargerThanScreen: true,
+    // Cosmetic, unlike setContentProtection: keeps the overlay out of the
+    // Mission Control window switcher so a three-finger swipe doesn't expose
+    // it as a distinct "app" to switch to mid-meeting.
+    hiddenInMissionControl: true,
     webPreferences: {
       preload: PRELOAD_PATH,
       nodeIntegration: false,
@@ -121,4 +130,47 @@ export function sendToOverlay(channel: string, ...args: unknown[]): void {
   const window = getOverlayWindow();
   if (!window) return;
   window.webContents.send(channel, ...args);
+}
+
+/**
+ * Panic-hide: F7 in `window/shortcuts.ts`. Hiding keeps the renderer alive
+ * (transcription and any in-flight analysis keep running) -- it only stops
+ * painting to the display, same as any other `BrowserWindow.hide()`.
+ */
+export function toggleOverlayVisibility(): void {
+  const window = getOverlayWindow();
+  if (!window) return;
+
+  if (window.isVisible()) {
+    window.hide();
+    return;
+  }
+
+  window.show();
+  // See trap 5 above: re-apply on every show(), not just at creation.
+  window.setContentProtection(true);
+}
+
+let clickThroughEnabled = false;
+
+export function isClickThroughEnabled(): boolean {
+  return clickThroughEnabled;
+}
+
+/**
+ * `forward: true` keeps delivering mouse-move events to the renderer (so
+ * hover states don't get stuck) while clicks pass through to whatever is
+ * behind the overlay -- an editor, a browser, whatever you're pointing at.
+ */
+export function setClickThrough(enabled: boolean): void {
+  const window = getOverlayWindow();
+  if (!window) return;
+  clickThroughEnabled = enabled;
+  window.setIgnoreMouseEvents(enabled, { forward: true });
+}
+
+/** F8 in `window/shortcuts.ts`. Returns the resulting state. */
+export function toggleClickThrough(): boolean {
+  setClickThrough(!clickThroughEnabled);
+  return clickThroughEnabled;
 }

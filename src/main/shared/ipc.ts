@@ -16,6 +16,7 @@ export const InvokeChannel = {
   GetStatus: "app:get-status",
   CaptureScreen: "screen:capture",
   AnalyzeScreenshot: "screen:analyze",
+  AskFollowUp: "screen:follow-up",
   StartTranscription: "transcription:start",
   StopTranscription: "transcription:stop",
 } as const;
@@ -35,6 +36,10 @@ export const EventChannel = {
   AnalyzeHotkey: "hotkey:analyze",
   TranscriptionData: "transcription:data",
   TranscriptionStatus: "transcription:status",
+  /** One text fragment of a streaming analysis or follow-up answer. */
+  AnalysisChunk: "screen:analysis-chunk",
+  /** Fired whenever F8 toggles click-through; the renderer can't detect it itself. */
+  InteractionMode: "window:interaction-mode",
 } as const;
 
 /** Which providers actually have a key, so the UI can explain itself. */
@@ -43,11 +48,56 @@ export interface AppStatus {
   transcriptionConfigured: boolean;
   analysisModel: string;
   transcriptionModel: string;
+  presets: AnalysisPresetSummary[];
+  defaultPresetId: string;
+}
+
+export interface AnalysisPresetSummary {
+  id: string;
+  label: string;
 }
 
 export interface CapturedScreenshot {
   dataUrl: string;
   capturedAt: string;
+}
+
+/**
+ * One or more screenshots analyzed as a single question. `analysisId` is
+ * minted by the renderer (not the main process) so it can start listening for
+ * `AnalysisChunk` events before the request round-trips at all.
+ */
+export interface AnalyzeScreenshotRequest {
+  analysisId: string;
+  dataUrls: string[];
+  presetId: string;
+}
+
+export interface AskFollowUpRequest {
+  analysisId: string;
+  previousResponseId: string;
+  question: string;
+  presetId: string;
+}
+
+/**
+ * Resolves the `invoke()` call once the stream completes. `text` is the full
+ * answer as a fallback for the (expected-rare) case where no delta events
+ * arrived -- the renderer normally prefers what it already accumulated from
+ * `AnalysisChunk`.
+ */
+export interface AnalysisResult {
+  responseId: string;
+  text: string;
+}
+
+export interface AnalysisChunk {
+  analysisId: string;
+  delta: string;
+}
+
+export interface InteractionModeStatus {
+  clickThrough: boolean;
 }
 
 export interface TranscriptionChunk {

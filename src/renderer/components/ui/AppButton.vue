@@ -62,8 +62,10 @@ withDefaults(
 }
 
 .btn:disabled {
+  /* No cursor: not-allowed -- see the global cursor rule in base.css. Any
+     shape change here would be visible in a screen share even though the
+     button itself isn't. */
   opacity: 0.45;
-  cursor: not-allowed;
 }
 
 .btn--primary {

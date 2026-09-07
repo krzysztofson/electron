@@ -1,19 +1,34 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import type { AppStatus } from "@/ipc-types";
+import PresetSwitcher from "./PresetSwitcher.vue";
 import ShortcutsCheatsheet from "./ShortcutsCheatsheet.vue";
 
 /**
- * Draggable title bar.
- *
- * The old markup had a bare 30px `.drag-region` div that existed only to be
- * grabbed. Same job, but it now shows which model is answering -- useful when
- * OPENAI_MODEL is overridden and you want to confirm what you're actually
- * talking to -- and opens the shortcuts cheatsheet.
+ * Draggable title bar: model badge, problem-type switcher, click-through
+ * indicator, and the shortcuts cheatsheet trigger.
  */
-defineProps<{ status: AppStatus | null }>();
+const props = defineProps<{
+  status: AppStatus | null;
+  presetId: string;
+}>();
+
+defineEmits<{ "update:presetId": [value: string] }>();
 
 const showCheatsheet = ref(false);
+const clickThrough = ref(false);
+
+let unsubscribeInteractionMode: (() => void) | null = null;
+
+onMounted(() => {
+  unsubscribeInteractionMode = window.electronAPI.onInteractionMode(
+    (status) => {
+      clickThrough.value = status.clickThrough;
+    },
+  );
+});
+
+onUnmounted(() => unsubscribeInteractionMode?.());
 </script>
 
 <template>
@@ -21,6 +36,21 @@ const showCheatsheet = ref(false);
     <span class="titlebar__name">Screen Analyzer</span>
     <span v-if="status" class="titlebar__model" :title="status.analysisModel">
       {{ status.analysisModel }}
+    </span>
+    <PresetSwitcher
+      v-if="status"
+      :presets="status.presets"
+      :model-value="props.presetId"
+      @update:model-value="$emit('update:presetId', $event)"
+    />
+    <!-- Only shown while active: the overlay is unclickable in this mode, so
+         there is nothing else on screen to indicate it. -->
+    <span
+      v-if="clickThrough"
+      class="titlebar__click-through"
+      title="Clicks pass through to the window behind"
+    >
+      click-through
     </span>
     <button
       type="button"
@@ -52,6 +82,7 @@ const showCheatsheet = ref(false);
 .titlebar__name {
   font-size: var(--text-sm);
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .titlebar__model {
@@ -64,6 +95,15 @@ const showCheatsheet = ref(false);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.titlebar__click-through {
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: var(--text-xs);
+  white-space: nowrap;
 }
 
 .titlebar__help {

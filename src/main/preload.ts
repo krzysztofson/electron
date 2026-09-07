@@ -3,8 +3,13 @@ import {
   EventChannel,
   InvokeChannel,
   SendChannel,
+  type AnalysisChunk,
+  type AnalysisResult,
+  type AnalyzeScreenshotRequest,
   type AppStatus,
+  type AskFollowUpRequest,
   type CapturedScreenshot,
+  type InteractionModeStatus,
   type TranscriptionChunk,
   type TranscriptionStatus,
 } from "./shared/ipc";
@@ -43,8 +48,13 @@ const api = {
   captureScreen: (): Promise<CapturedScreenshot> =>
     ipcRenderer.invoke(InvokeChannel.CaptureScreen),
 
-  analyzeScreenshot: (screenshotDataUrl: string): Promise<string> =>
-    ipcRenderer.invoke(InvokeChannel.AnalyzeScreenshot, screenshotDataUrl),
+  analyzeScreenshot: (
+    request: AnalyzeScreenshotRequest,
+  ): Promise<AnalysisResult> =>
+    ipcRenderer.invoke(InvokeChannel.AnalyzeScreenshot, request),
+
+  askFollowUp: (request: AskFollowUpRequest): Promise<AnalysisResult> =>
+    ipcRenderer.invoke(InvokeChannel.AskFollowUp, request),
 
   startTranscription: (): Promise<void> =>
     ipcRenderer.invoke(InvokeChannel.StartTranscription),
@@ -59,6 +69,14 @@ const api = {
 
   onAnalyzeHotkey: (callback: () => void): (() => void) =>
     subscribe<void>(EventChannel.AnalyzeHotkey, () => callback()),
+
+  onAnalysisChunk: (callback: (chunk: AnalysisChunk) => void): (() => void) =>
+    subscribe<AnalysisChunk>(EventChannel.AnalysisChunk, callback),
+
+  onInteractionMode: (
+    callback: (status: InteractionModeStatus) => void,
+  ): (() => void) =>
+    subscribe<InteractionModeStatus>(EventChannel.InteractionMode, callback),
 
   onTranscriptionData: (
     callback: (chunk: TranscriptionChunk) => void,

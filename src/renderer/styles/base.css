@@ -15,6 +15,23 @@
   box-sizing: border-box;
 }
 
+/**
+ * The window's content is invisible in a screen share (setContentProtection),
+ * but the mouse cursor is drawn by the OS compositor, not by this window --
+ * it IS visible in a share regardless. If it changed shape over a button or
+ * an input here, that shape change alone would prove something invisible is
+ * there, even though nobody can see what. Every element keeps the plain arrow
+ * so hovering the overlay looks, from a viewer's side, identical to hovering
+ * empty desktop. `!important` because native controls (button, select,
+ * checkbox) apply their own cursor via the UA stylesheet at a specificity
+ * plain rules below won't reliably beat.
+ */
+*,
+*::before,
+*::after {
+  cursor: default !important;
+}
+
 html,
 body {
   margin: 0;
@@ -34,7 +51,6 @@ body {
   text-rendering: optimizeLegibility;
   /* The overlay is a control surface, not a document. */
   user-select: none;
-  cursor: default;
 }
 
 #app {
@@ -60,7 +76,6 @@ p {
 button {
   font-family: inherit;
   font-size: inherit;
-  cursor: pointer;
 }
 
 button:focus-visible,
@@ -69,10 +84,10 @@ button:focus-visible,
   outline-offset: 1px;
 }
 
-/* Text the user may actually want to copy out. */
+/* Text the user may actually want to copy out. Selectable by drag, but still
+   shows the plain arrow while hovering it -- see the cursor rule above. */
 .selectable {
   user-select: text;
-  cursor: text;
 }
 
 ::-webkit-scrollbar {

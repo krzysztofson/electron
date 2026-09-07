@@ -5,9 +5,13 @@
  * renderer one import path instead of relative reaches into `src/main`.
  */
 export type {
+  AnalysisChunk,
+  AnalysisPresetSummary,
+  AnalysisResult,
   AppStatus,
   AudioSourceKind,
   CapturedScreenshot,
+  InteractionModeStatus,
   TranscriptionChunk,
   TranscriptionState,
   TranscriptionStatus,

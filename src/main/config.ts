@@ -8,6 +8,39 @@ const log = createLogger("config");
 /** Latest cost/capability-balanced OpenAI vision model. Override: OPENAI_MODEL. */
 export const DEFAULT_ANALYSIS_MODEL = "gpt-5.6-terra";
 
+/** One of the Responses API's `ImageDetail` values, checked at read time. */
+const VALID_IMAGE_DETAILS = ["original", "high", "low", "auto"] as const;
+export type ImageDetail = (typeof VALID_IMAGE_DETAILS)[number];
+
+/**
+ * "original" skips the API's own resizing, which is the point of capturing at
+ * native resolution in screen-capture.ts -- with "high" the API refits
+ * everything to a 2048px long edge regardless of what we send, so native
+ * pixels would be wasted bandwidth. "original" is documented as being for
+ * "large, dense, or spatially-sensitive images", which a screenshot of small
+ * code is. Override: CAPTURE_DETAIL.
+ */
+export const DEFAULT_CAPTURE_DETAIL: ImageDetail = "original";
+
+/**
+ * Per-image patch ceiling the API enforces (~30,000). Kept comfortably under
+ * it as a default so we have room to fall back once rather than guess exactly
+ * where the real limit sits. Override: CAPTURE_MAX_PATCHES.
+ */
+export const DEFAULT_CAPTURE_MAX_PATCHES = 24_000;
+
+/** Preset problem-type prompts. See analysis-presets.ts. Override: ANALYSIS_PRESET. */
+export const DEFAULT_ANALYSIS_PRESET = "coding";
+
+/**
+ * Panic-hide and click-through accelerators. Configurable because macOS
+ * treats F7/F8 as media keys unless "Use F1-F12 as standard function keys" is
+ * enabled -- F5/F6 already work by default here, but that's not a guarantee
+ * every function key does.
+ */
+export const DEFAULT_HIDE_SHOW_SHORTCUT = "F7";
+export const DEFAULT_CLICK_THROUGH_SHORTCUT = "F8";
+
 /**
  * The Live API transcription model. This one is chosen deliberately: it
  * supports `responseModalities: [TEXT]` directly, whereas the native-audio
@@ -16,21 +49,6 @@ export const DEFAULT_ANALYSIS_MODEL = "gpt-5.6-terra";
  * Override: GEMINI_TRANSCRIBE_MODEL.
  */
 export const DEFAULT_TRANSCRIPTION_MODEL = "gemini-3.5-transcribe-live";
-
-/** Override: ANALYSIS_PROMPT. */
-export const DEFAULT_ANALYSIS_PROMPT = [
-  "You are being interviewed for a front-end developer position.",
-  "Solve the task visible in the screenshot, or answer the questions shown.",
-  "Write the code solution first (only for coding tasks), then a short explanation.",
-].join(" ");
-
-/**
- * Screenshots are downscaled to this before being sent to the model. Kept at
- * the historical default so behaviour is unchanged; raise it (with
- * CAPTURE_WIDTH / CAPTURE_HEIGHT) if the model struggles to read small code.
- */
-const DEFAULT_CAPTURE_WIDTH = 1200;
-const DEFAULT_CAPTURE_HEIGHT = 800;
 
 /**
  * In development `__dirname` is `build/main`, so `../../` is the repo root and
@@ -83,16 +101,38 @@ export const config = {
       process.env.GEMINI_TRANSCRIBE_MODEL?.trim() || DEFAULT_TRANSCRIPTION_MODEL
     );
   },
-  get analysisPrompt(): string {
-    return process.env.ANALYSIS_PROMPT?.trim() || DEFAULT_ANALYSIS_PROMPT;
+  get analysisPrompt(): string | null {
+    return process.env.ANALYSIS_PROMPT?.trim() || null;
+  },
+  get analysisPreset(): string {
+    return process.env.ANALYSIS_PRESET?.trim() || DEFAULT_ANALYSIS_PRESET;
   },
   get maxOutputTokens(): number {
     return readInt("OPENAI_MAX_OUTPUT_TOKENS", 4096);
   },
-  get captureSize(): { width: number; height: number } {
-    return {
-      width: readInt("CAPTURE_WIDTH", DEFAULT_CAPTURE_WIDTH),
-      height: readInt("CAPTURE_HEIGHT", DEFAULT_CAPTURE_HEIGHT),
-    };
+  get captureDetail(): ImageDetail {
+    const raw = process.env.CAPTURE_DETAIL?.trim().toLowerCase();
+    if (raw && (VALID_IMAGE_DETAILS as readonly string[]).includes(raw)) {
+      return raw as ImageDetail;
+    }
+    return DEFAULT_CAPTURE_DETAIL;
+  },
+  get captureMaxPatches(): number {
+    return readInt("CAPTURE_MAX_PATCHES", DEFAULT_CAPTURE_MAX_PATCHES);
+  },
+  /** Explicit override; null means "use native display resolution". */
+  get captureSizeOverride(): { width: number; height: number } | null {
+    const width = readInt("CAPTURE_WIDTH", 0);
+    const height = readInt("CAPTURE_HEIGHT", 0);
+    return width > 0 && height > 0 ? { width, height } : null;
+  },
+  get hideShowShortcut(): string {
+    return process.env.HIDE_SHOW_SHORTCUT?.trim() || DEFAULT_HIDE_SHOW_SHORTCUT;
+  },
+  get clickThroughShortcut(): string {
+    return (
+      process.env.CLICK_THROUGH_SHORTCUT?.trim() ||
+      DEFAULT_CLICK_THROUGH_SHORTCUT
+    );
   },
 };

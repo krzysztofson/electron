@@ -1,7 +1,13 @@
 import { globalShortcut, type BrowserWindow } from "electron";
+import { config } from "../config";
 import { createLogger } from "../logger";
-import { EventChannel } from "../shared/ipc";
-import { getOverlayWindow, sendToOverlay } from "./overlay-window";
+import { EventChannel, type InteractionModeStatus } from "../shared/ipc";
+import {
+  getOverlayWindow,
+  sendToOverlay,
+  toggleClickThrough,
+  toggleOverlayVisibility,
+} from "./overlay-window";
 
 const log = createLogger("shortcuts");
 
@@ -42,6 +48,21 @@ export function registerGlobalShortcuts(): void {
 
   register("F6", () => nudge(COARSE_STEP, 0));
   register("Control+F6", () => nudge(-COARSE_STEP, 0));
+
+  register(config.hideShowShortcut, () => {
+    log.info("toggling overlay visibility");
+    toggleOverlayVisibility();
+  });
+
+  // Must stay global: once click-through is on, the overlay itself cannot be
+  // clicked to turn it back off.
+  register(config.clickThroughShortcut, () => {
+    const clickThrough = toggleClickThrough();
+    log.info(`click-through ${clickThrough ? "enabled" : "disabled"}`);
+    sendToOverlay(EventChannel.InteractionMode, {
+      clickThrough,
+    } satisfies InteractionModeStatus);
+  });
 }
 
 /**

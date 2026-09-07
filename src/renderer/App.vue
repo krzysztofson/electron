@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useAppStatus } from "@/composables/useAppStatus";
+import { usePresetSelection } from "@/composables/usePresetSelection";
 import AppHeader from "@/components/ui/AppHeader.vue";
 import ScreenshotPanel from "@/components/screenshots/ScreenshotPanel.vue";
 import TranscriptionPanel from "@/components/transcription/TranscriptionPanel.vue";
@@ -8,16 +9,21 @@ import TranscriptionPanel from "@/components/transcription/TranscriptionPanel.vu
  * Layout shell only.
  *
  * Screen analysis and transcription are two independent features -- they share
- * no state and neither feeds the other.
+ * no state and neither feeds the other. `presetId` lives here because both
+ * the header (to select it) and the screenshot panel (to use it) need it.
  */
 const { status } = useAppStatus();
+const { presetId } = usePresetSelection(status);
 </script>
 
 <template>
-  <AppHeader :status="status" />
+  <AppHeader :status="status" v-model:preset-id="presetId" />
 
   <main class="layout">
-    <ScreenshotPanel :configured="status?.analysisConfigured ?? false" />
+    <ScreenshotPanel
+      :configured="status?.analysisConfigured ?? false"
+      :preset-id="presetId"
+    />
     <div class="layout__transcription">
       <TranscriptionPanel
         :configured="status?.transcriptionConfigured ?? false"

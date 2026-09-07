@@ -20,10 +20,17 @@
   --border-subtle: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.16);
 
-  /* Text. */
-  --text-primary: #e8ecf4;
-  --text-secondary: #a3adc2;
-  --text-muted: #6b7689;
+  /*
+   * Text. Pure white for primary content -- this reads at a glance during a
+   * live call, often at reduced size and blended by the window's 70% opacity,
+   * so every bit of contrast against --surface-base matters. Secondary/muted
+   * are brightened along with it so the whole UI reads as "white on dark"
+   * rather than "grey on dark", while keeping enough of a step down to still
+   * show hierarchy (timestamps, badges) against primary content.
+   */
+  --text-primary: #ffffff;
+  --text-secondary: #d6dbe6;
+  --text-muted: #9aa4b8;
   --text-inverse: #0b0e14;
 
   /* One accent, used sparingly. */
