@@ -1,105 +1,100 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import {
+  EventChannel,
+  InvokeChannel,
+  SendChannel,
+  type AnalysisChunk,
+  type AnalysisResult,
+  type AnalyzeScreenshotRequest,
+  type AppStatus,
+  type AskFollowUpRequest,
+  type CapturedScreenshot,
+  type InteractionModeStatus,
+  type TranscriptionChunk,
+  type TranscriptionStatus,
+} from "./shared/ipc";
 
-contextBridge.exposeInMainWorld("electronAPI", {
-  sendMessage: (message: string) => ipcRenderer.send("message", message),
-  captureScreen: async () => {
-    try {
-      const result = await ipcRenderer.invoke("capture-screen");
-      return result;
-    } catch (error) {
-      console.error("❌ Error in preload captureScreen:", error);
-      throw error;
-    }
+/**
+ * Subscribe to a main-process event and return an unsubscribe function.
+ *
+ * Replaces five near-identical copies of this listener boilerplate.
+ */
+function subscribe<T>(
+  channel: string,
+  callback: (payload: T) => void,
+): () => void {
+  const listener = (_event: IpcRendererEvent, payload: T) => callback(payload);
+  ipcRenderer.on(channel, listener);
+  return () => {
+    ipcRenderer.removeListener(channel, listener);
+  };
+}
+
+/**
+ * The renderer's entire view of the main process.
+ *
+ * Note there is no `sendMessage`: the old API exposed one that fired on a
+ * `"message"` channel with no `ipcMain` listener anywhere, and `App.vue` called
+ * it on every mount straight into the void.
+ *
+ * Errors are not caught here. The previous version wrapped every call in a
+ * try/catch that logged and rethrew, which added noise without changing
+ * behaviour -- rejections propagate to the caller either way.
+ */
+const api = {
+  getStatus: (): Promise<AppStatus> =>
+    ipcRenderer.invoke(InvokeChannel.GetStatus),
+
+  captureScreen: (): Promise<CapturedScreenshot> =>
+    ipcRenderer.invoke(InvokeChannel.CaptureScreen),
+
+  analyzeScreenshot: (
+    request: AnalyzeScreenshotRequest,
+  ): Promise<AnalysisResult> =>
+    ipcRenderer.invoke(InvokeChannel.AnalyzeScreenshot, request),
+
+  askFollowUp: (request: AskFollowUpRequest): Promise<AnalysisResult> =>
+    ipcRenderer.invoke(InvokeChannel.AskFollowUp, request),
+
+  startTranscription: (): Promise<void> =>
+    ipcRenderer.invoke(InvokeChannel.StartTranscription),
+
+  stopTranscription: (): Promise<void> =>
+    ipcRenderer.invoke(InvokeChannel.StopTranscription),
+
+  /** Fire-and-forget: this runs several times a second. */
+  sendAudioChunk: (chunk: ArrayBuffer): void => {
+    ipcRenderer.send(SendChannel.AudioChunk, new Uint8Array(chunk));
   },
-  analyzeScreenshot: async (screenshotDataUrl: string) => {
-    try {
-      const result = await ipcRenderer.invoke(
-        "analyze-screenshot",
-        screenshotDataUrl
-      );
-      return result;
-    } catch (error) {
-      console.error("❌ Error in preload analyzeScreenshot:", error);
-      throw error;
-    }
-  },
-  onF5Press: (callback: () => void) => {
-    const listener = (_event: Electron.IpcRendererEvent) => {
-      callback();
-    };
-    ipcRenderer.on("f5-pressed", listener);
-    return () => {
-      ipcRenderer.removeListener("f5-pressed", listener);
-    };
-  },
-  // Transcription API
-  startTranscription: async () => {
-    try {
-      return await ipcRenderer.invoke("start-transcription");
-    } catch (error) {
-      console.error("❌ Error starting transcription:", error);
-      throw error;
-    }
-  },
-  stopTranscription: async () => {
-    try {
-      return await ipcRenderer.invoke("stop-transcription");
-    } catch (error) {
-      console.error("❌ Error stopping transcription:", error);
-      throw error;
-    }
-  },
-  writeAudioData: async (audioData: ArrayBuffer) => {
-    try {
-      return await ipcRenderer.invoke(
-        "write-audio-data",
-        Buffer.from(audioData)
-      );
-    } catch (error) {
-      console.error("❌ Error writing audio data:", error);
-      throw error;
-    }
-  },
+
+  onAnalyzeHotkey: (callback: () => void): (() => void) =>
+    subscribe<void>(EventChannel.AnalyzeHotkey, () => callback()),
+
+  onAnalysisChunk: (callback: (chunk: AnalysisChunk) => void): (() => void) =>
+    subscribe<AnalysisChunk>(EventChannel.AnalysisChunk, callback),
+
+  onInteractionMode: (
+    callback: (status: InteractionModeStatus) => void,
+  ): (() => void) =>
+    subscribe<InteractionModeStatus>(EventChannel.InteractionMode, callback),
+
   onTranscriptionData: (
-    callback: (data: {
-      transcript: string;
-      isFinal: boolean;
-      timestamp: string;
-    }) => void
-  ) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: any) => {
-      callback(data);
-    };
-    ipcRenderer.on("transcription-data", listener);
-    return () => {
-      ipcRenderer.removeListener("transcription-data", listener);
-    };
-  },
-  onTranscriptionStarted: (callback: () => void) => {
-    const listener = (_event: Electron.IpcRendererEvent) => {
-      callback();
-    };
-    ipcRenderer.on("transcription-started", listener);
-    return () => {
-      ipcRenderer.removeListener("transcription-started", listener);
-    };
-  },
-  onTranscriptionStopped: (callback: () => void) => {
-    const listener = (_event: Electron.IpcRendererEvent) => {
-      callback();
-    };
-    ipcRenderer.on("transcription-stopped", listener);
-    return () => {
-      ipcRenderer.removeListener("transcription-stopped", listener);
-    };
-  },
-  onTranscriptionError: (callback: (error: string) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, error: string) => {
-      callback(error);
-    };
-    ipcRenderer.on("transcription-error", listener);
-    return () => {
-      ipcRenderer.removeListener("transcription-error", listener);
-    };
-  },
-});
+    callback: (chunk: TranscriptionChunk) => void,
+  ): (() => void) =>
+    subscribe<TranscriptionChunk>(EventChannel.TranscriptionData, callback),
+
+  onTranscriptionStatus: (
+    callback: (status: TranscriptionStatus) => void,
+  ): (() => void) =>
+    subscribe<TranscriptionStatus>(EventChannel.TranscriptionStatus, callback),
+};
+
+contextBridge.exposeInMainWorld("electronAPI", api);
+
+/**
+ * The renderer derives its `window.electronAPI` type from this, so the two can
+ * no longer drift. The hand-written version had already grown a
+ * `getAudioSources` method that existed nowhere in this file -- it type-checked
+ * fine and threw at runtime.
+ */
+export type ElectronApi = typeof api;

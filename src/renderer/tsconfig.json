@@ -1,17 +1,29 @@
 {
-    "compilerOptions": {
-      "target": "esnext",
-      "useDefineForClassFields": true,
-      "module": "esnext",
-      "moduleResolution": "node",
-      "strict": true,
-      "jsx": "preserve",
-      "sourceMap": true,
-      "resolveJsonModule": true,
-      "esModuleInterop": true,
-      "lib": ["esnext", "dom"],
-      "types": ["vite/client"]
-    },
-    "include": ["./**/*.ts", "./**/*.d.ts", "./**/*.tsx", "./**/*.vue"],
-  }
-  
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "useDefineForClassFields": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "jsx": "preserve",
+    "sourceMap": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    // Vite owns the renderer build; this project exists purely for vue-tsc.
+    "noEmit": true,
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"],
+    // No `baseUrl`: it is deprecated in TS 6, and `paths` entries resolve
+    // relative to this file's directory without it.
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": ["./**/*.ts", "./**/*.d.ts", "./**/*.vue"]
+}
