@@ -17,7 +17,18 @@ const isCapturing = ref(false);
 const isAnalyzing = ref(false);
 const selectedScreenshotId = ref<number | null>(null);
 
-let cleanupF5Listener: (() => void) | null = null; // Added
+// Transcription state
+const isTranscribing = ref(false);
+const transcriptionText = ref("");
+const transcriptionHistory = ref<
+  { transcript: string; timestamp: string; isFinal: boolean }[]
+>([]);
+const transcriptionError = ref<string | null>(null);
+
+let mediaRecorder: MediaRecorder | null = null;
+let audioStream: MediaStream | null = null;
+let cleanupF5Listener: (() => void) | null = null;
+let cleanupTranscriptionListeners: (() => void)[] = [];
 
 // Function to capture screen
 const captureScreen = async () => {
@@ -103,6 +114,206 @@ const analyzeScreenshot = async (id: number) => {
   }
 };
 
+// Transcription functions
+const startTranscription = async () => {
+  try {
+    transcriptionError.value = null;
+
+    console.log("Enumerating available audio devices...");
+
+    // Enumerate audio input devices
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const audioInputs = devices.filter(
+      (device) => device.kind === "audioinput"
+    );
+
+    console.log("Available audio input devices:");
+    audioInputs.forEach((device, index) => {
+      console.log(
+        `${index}: ${device.label || "Unknown Device"} (${device.deviceId})`
+      );
+    });
+
+    // Look for BlackHole device
+    const blackHoleDevice = audioInputs.find(
+      (device) =>
+        device.label.toLowerCase().includes("blackhole") ||
+        device.label.toLowerCase().includes("black hole")
+    );
+
+    console.log("Attempting to capture system audio via BlackHole...");
+
+    let audioConstraints: MediaStreamConstraints["audio"];
+
+    if (blackHoleDevice) {
+      console.log(`🎯 Found BlackHole device: ${blackHoleDevice.label}`);
+      audioConstraints = {
+        deviceId: { exact: blackHoleDevice.deviceId },
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      };
+    } else {
+      console.log("⚠️ BlackHole device not found, using default device");
+      audioConstraints = {
+        deviceId: "default",
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      };
+    }
+
+    // Use BlackHole virtual audio device for system audio capture
+    audioStream = await navigator.mediaDevices.getUserMedia({
+      audio: audioConstraints,
+    });
+
+    console.log("✅ System audio capture started via BlackHole");
+
+    // Use Web Audio API to get raw PCM data instead of MediaRecorder
+    const audioContext = new AudioContext({ sampleRate: 16000 });
+    const source = audioContext.createMediaStreamSource(audioStream);
+
+    // Create a ScriptProcessorNode to capture raw audio data
+    const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+    processor.onaudioprocess = async (event) => {
+      const inputBuffer = event.inputBuffer;
+      const inputData = inputBuffer.getChannelData(0); // Get mono channel
+
+      // Calculate audio level for debugging
+      let sum = 0;
+      let max = 0;
+      for (let i = 0; i < inputData.length; i++) {
+        const abs = Math.abs(inputData[i]);
+        sum += abs;
+        max = Math.max(max, abs);
+      }
+      const average = sum / inputData.length;
+
+      // Log audio levels periodically
+      if (Math.random() < 0.1) {
+        // Log ~10% of the time to avoid spam
+        console.log(
+          `🔊 Audio levels - Average: ${average.toFixed(
+            4
+          )}, Peak: ${max.toFixed(4)}`
+        );
+      }
+
+      // Convert Float32 to Int16 (LINEAR16 format)
+      const pcmData = new Int16Array(inputData.length);
+      for (let i = 0; i < inputData.length; i++) {
+        const s = Math.max(-1, Math.min(1, inputData[i]));
+        pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+
+      console.log(
+        `📊 Captured ${pcmData.length} PCM samples (avg: ${average.toFixed(
+          4
+        )}, peak: ${max.toFixed(4)})`
+      );
+
+      try {
+        await window.electronAPI.writeAudioData(pcmData.buffer);
+        console.log(
+          `📤 Sent ${pcmData.buffer.byteLength} bytes of LINEAR16 PCM data`
+        );
+      } catch (error) {
+        console.error("❌ Error sending PCM data:", error);
+      }
+    };
+
+    // Connect the audio processing chain
+    source.connect(processor);
+    processor.connect(audioContext.destination);
+
+    // Store references for cleanup
+    (window as any).audioContext = audioContext;
+    (window as any).processor = processor;
+    (window as any).source = source;
+
+    // Start transcription in main process
+    await window.electronAPI.startTranscription();
+
+    isTranscribing.value = true;
+    transcriptionText.value = "";
+    console.log("Transcription started");
+  } catch (error) {
+    console.error("Error starting transcription:", error);
+    let errorMessage = `Error starting transcription: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+
+    // Provide helpful error messages for BlackHole audio issues
+    if (error instanceof Error) {
+      if (error.name === "NotAllowedError") {
+        errorMessage =
+          "Permission denied. Please allow microphone access for BlackHole audio capture.";
+      } else if (error.name === "NotSupportedError") {
+        errorMessage =
+          "Audio capture not supported. Make sure BlackHole is properly installed and configured.";
+      } else if (error.name === "NotFoundError") {
+        errorMessage =
+          "BlackHole audio device not found. Make sure BlackHole is installed and set as your default audio device.";
+      } else if (error.name === "OverconstrainedError") {
+        errorMessage =
+          "Audio constraints not supported. Check your BlackHole configuration.";
+      }
+    }
+
+    transcriptionError.value = errorMessage;
+  }
+};
+
+const stopTranscription = async () => {
+  try {
+    // Clean up Web Audio API resources
+    const audioContext = (window as any).audioContext;
+    const processor = (window as any).processor;
+    const source = (window as any).source;
+
+    if (processor) {
+      processor.disconnect();
+      (window as any).processor = null;
+    }
+
+    if (source) {
+      source.disconnect();
+      (window as any).source = null;
+    }
+
+    if (audioContext) {
+      await audioContext.close();
+      (window as any).audioContext = null;
+    }
+
+    // Stop audio stream
+    if (audioStream) {
+      audioStream.getTracks().forEach((track) => track.stop());
+      audioStream = null;
+    }
+
+    // Stop transcription in main process
+    await window.electronAPI.stopTranscription();
+
+    isTranscribing.value = false;
+    mediaRecorder = null;
+    console.log("Transcription stopped");
+  } catch (error) {
+    console.error("Error stopping transcription:", error);
+    transcriptionError.value = `Error stopping transcription: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+  }
+};
+
+const clearTranscription = () => {
+  transcriptionHistory.value = [];
+  transcriptionText.value = "";
+  transcriptionError.value = null;
+};
+
 // Initialize marked
 onMounted(() => {
   marked.setOptions({
@@ -129,11 +340,74 @@ onMounted(() => {
       }
     });
   }
+
+  // Set up transcription event listeners
+  if (window.electronAPI) {
+    // Listen for transcription data
+    const cleanupTranscriptionData = window.electronAPI.onTranscriptionData(
+      (data) => {
+        console.log("📝 Received transcription data:", data);
+        if (data.isFinal) {
+          console.log("✅ Final transcript:", data.transcript);
+          // Add final transcript to history
+          transcriptionHistory.value.push({
+            transcript: data.transcript,
+            timestamp: new Date(data.timestamp).toLocaleTimeString(),
+            isFinal: true,
+          });
+          transcriptionText.value = ""; // Clear current text for next phrase
+        } else {
+          console.log("⏳ Interim transcript:", data.transcript);
+          // Update current text with interim results
+          transcriptionText.value = data.transcript;
+        }
+      }
+    );
+
+    // Listen for transcription started
+    const cleanupTranscriptionStarted =
+      window.electronAPI.onTranscriptionStarted(() => {
+        console.log("Transcription started event received");
+        isTranscribing.value = true;
+      });
+
+    // Listen for transcription stopped
+    const cleanupTranscriptionStopped =
+      window.electronAPI.onTranscriptionStopped(() => {
+        console.log("Transcription stopped event received");
+        isTranscribing.value = false;
+      });
+
+    // Listen for transcription errors
+    const cleanupTranscriptionError = window.electronAPI.onTranscriptionError(
+      (error) => {
+        console.error("Transcription error:", error);
+        transcriptionError.value = error;
+        isTranscribing.value = false;
+      }
+    );
+
+    // Store cleanup functions
+    cleanupTranscriptionListeners = [
+      cleanupTranscriptionData,
+      cleanupTranscriptionStarted,
+      cleanupTranscriptionStopped,
+      cleanupTranscriptionError,
+    ];
+  }
 });
 
 onUnmounted(() => {
   if (cleanupF5Listener) {
     cleanupF5Listener();
+  }
+
+  // Clean up transcription listeners
+  cleanupTranscriptionListeners.forEach((cleanup) => cleanup());
+
+  // Stop transcription if active
+  if (isTranscribing.value) {
+    stopTranscription();
   }
 });
 </script>
@@ -156,6 +430,73 @@ onUnmounted(() => {
     >
       Clear All Screenshots
     </button>
+  </div>
+
+  <!-- Transcription Controls -->
+  <div class="transcription-section">
+    <h3>Live Transcription</h3>
+    <div class="transcription-controls">
+      <button
+        class="transcription-btn start"
+        type="button"
+        @click="startTranscription"
+        :disabled="isTranscribing"
+      >
+        {{ isTranscribing ? "Recording..." : "Start Transcription" }}
+      </button>
+      <button
+        class="transcription-btn stop"
+        type="button"
+        @click="stopTranscription"
+        :disabled="!isTranscribing"
+      >
+        Stop Transcription
+      </button>
+      <button
+        v-if="transcriptionHistory.length > 0"
+        class="transcription-btn clear"
+        type="button"
+        @click="clearTranscription"
+      >
+        Clear Transcription
+      </button>
+    </div>
+
+    <!-- Audio source indicator -->
+    <div v-if="isTranscribing" class="audio-source-indicator">
+      <span class="audio-source-label">
+        📡 Capturing: <strong>System Audio (via BlackHole)</strong>
+      </span>
+    </div>
+
+    <!-- Current transcription text -->
+    <div
+      v-if="isTranscribing && transcriptionText"
+      class="current-transcription"
+    >
+      <h4>Current:</h4>
+      <p class="interim-text">{{ transcriptionText }}</p>
+    </div>
+
+    <!-- Transcription history -->
+    <div v-if="transcriptionHistory.length > 0" class="transcription-history">
+      <h4>Transcription History:</h4>
+      <div class="transcription-list">
+        <div
+          v-for="(item, index) in transcriptionHistory"
+          :key="index"
+          class="transcription-item"
+        >
+          <span class="timestamp">{{ item.timestamp }}</span>
+          <span class="transcript">{{ item.transcript }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Transcription error -->
+    <div v-if="transcriptionError" class="transcription-error">
+      {{ transcriptionError }}
+    </div>
   </div>
 
   <div v-if="errorMsg" class="error-message">
@@ -216,6 +557,143 @@ onUnmounted(() => {
 .card {
   display: flex;
   gap: 10px;
+}
+
+/* Transcription styles */
+.transcription-section {
+  margin: 20px 0;
+  padding: 15px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background-color: #f9f9f9;
+}
+
+.transcription-controls {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.transcription-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.transcription-btn.start {
+  background-color: #4caf50;
+  color: white;
+}
+
+.transcription-btn.start:hover:not(:disabled) {
+  background-color: #45a049;
+}
+
+.transcription-btn.stop {
+  background-color: #f44336;
+  color: white;
+}
+
+.transcription-btn.stop:hover:not(:disabled) {
+  background-color: #da190b;
+}
+
+.transcription-btn.clear {
+  background-color: #ff9800;
+  color: white;
+}
+
+.transcription-btn.clear:hover:not(:disabled) {
+  background-color: #e68900;
+}
+
+.transcription-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.audio-source-indicator {
+  margin-bottom: 15px;
+  padding: 8px 12px;
+  background-color: #e8f5e8;
+  border-radius: 4px;
+  border-left: 4px solid #4caf50;
+  font-size: 0.9rem;
+}
+
+.audio-source-label {
+  color: #2e7d32;
+}
+
+.audio-source-label strong {
+  color: #1b5e20;
+}
+
+.current-transcription {
+  margin-bottom: 15px;
+  padding: 10px;
+  background-color: #e3f2fd;
+  border-radius: 4px;
+  border-left: 4px solid #2196f3;
+}
+
+.current-transcription h4 {
+  margin: 0 0 8px 0;
+  color: #1976d2;
+}
+
+.interim-text {
+  margin: 0;
+  font-style: italic;
+  color: #666;
+}
+
+.transcription-history {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.transcription-history h4 {
+  margin: 0 0 10px 0;
+  color: #333;
+}
+
+.transcription-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.transcription-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px;
+  background-color: white;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+}
+
+.transcription-item .timestamp {
+  font-size: 0.8rem;
+  color: #666;
+  white-space: nowrap;
+  min-width: 70px;
+}
+
+.transcription-item .transcript {
+  flex: 1;
+  line-height: 1.4;
+}
+
+.transcription-error {
+  color: #f44336;
+  background-color: #ffebee;
+  padding: 8px;
+  border-radius: 4px;
+  margin-top: 10px;
 }
 
 .screenshots-container {
