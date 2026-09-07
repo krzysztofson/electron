@@ -1,0 +1,12 @@
+{
+  // Emit config, used by scripts/build.mjs and scripts/dev-server.mjs.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false
+  },
+  // preload.ts is bundled by Vite (see vite.preload.config.mjs) so it can stay
+  // sandboxed while still importing ./shared/ipc. Letting tsc emit it too
+  // would overwrite that bundle with a version that does a relative
+  // `require("./shared/ipc")`, which throws in a sandboxed preload.
+  "exclude": ["static", "preload.ts"]
+}

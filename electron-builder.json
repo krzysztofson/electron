@@ -1,39 +1,62 @@
 {
-    "appId": "com.electron.app",
-    "directories": {
-        "output": "dist"
+  "appId": "com.krzysztofson.screen-analyzer",
+  "productName": "Screen Analyzer",
+  "directories": {
+    "output": "dist",
+    "buildResources": "build-resources"
+  },
+  "files": [
+    {
+      "from": "build/main",
+      "to": "main",
+      "filter": ["**/*"]
     },
-
-    "nsis": {
-        "oneClick": false,
-        "perMachine": false,
-        "allowToChangeInstallationDirectory": true,
-        "shortcutName": "Electron App"
+    {
+      "from": "build/renderer",
+      "to": "renderer",
+      "filter": ["**/*"]
     },
-    "win": {
-        "target": "nsis"
+    {
+      "from": "src/main/static",
+      "to": "static",
+      "filter": ["**/*"]
     },
-    "linux":  {
-        "target": ["snap"]
-    },
-    "files": [
-        {
-            "from": "build/main",
-            "to": "main",
-            "filter": ["**/*"]
-        },
-        {
-            "from": "build/renderer",
-            "to": "renderer",
-            "filter": ["**/*"]
-        },
-        {
-            "from": "src/main/static",
-            "to": "static",
-            "filter": ["**/*"]
-        },
-	"!build",
-	"!dist",
-	"!scripts"
-    ]
+    "!build",
+    "!dist",
+    "!scripts",
+    "!src",
+    "!build-resources",
+    "!*.md",
+    "!*.mjs",
+    "!eslint.config.mjs",
+    "!.editorconfig",
+    "!.prettier*",
+    "!.env*",
+    "!**/.env*"
+  ],
+  "mac": {
+    "target": ["dmg", "zip"],
+    "category": "public.app-category.productivity",
+    "hardenedRuntime": true,
+    "entitlements": "build-resources/entitlements.mac.plist",
+    "entitlementsInherit": "build-resources/entitlements.mac.plist",
+    "extendInfo": {
+      "NSScreenCaptureUsageDescription": "Screen Analyzer captures your screen so the AI can read and answer what is on it. The overlay itself is excluded from any screen share.",
+      "NSMicrophoneUsageDescription": "Screen Analyzer listens to meeting audio to produce a live transcript.",
+      "NSAudioCaptureUsageDescription": "Screen Analyzer captures system audio to produce a live transcript of your meeting."
+    }
+  },
+  "win": {
+    "target": "nsis"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "shortcutName": "Screen Analyzer"
+  },
+  "linux": {
+    "target": ["AppImage"],
+    "category": "Utility"
+  }
 }

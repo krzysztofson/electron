@@ -1,14 +1,34 @@
 {
+  // The full main-process project: every file, including preload.ts. This is
+  // what editors, ESLint's project service and `npm run typecheck` pick up, so
+  // no source file is invisible to tooling.
+  //
+  // Emit is configured separately in tsconfig.build.json, which excludes
+  // preload.ts because Vite bundles that one.
   "compilerOptions": {
-    "target": "ES2015",
-    "module": "commonjs",
+    "target": "ES2022",
+    // `exports`-map-aware resolution (openai v7 and @google/genai both need
+    // it) while still emitting CommonJS for Electron. node20 rather than
+    // node18 because @google/genai declares its types as ESM even though it
+    // ships a CJS build, and only node20+ models Node's `require(esm)`
+    // support. Electron 44 runs Node 22, so this is safe.
+    "module": "node20",
     "strict": true,
+    // Was `false`, which let `any` leak through the transcription stream, the
+    // audio IPC payload and every catch block.
+    "noImplicitAny": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
+    "sourceMap": true,
+    "noEmit": true,
+    // Pins output to build/main/*. Without an explicit rootDir, importing any
+    // file from outside this directory makes tsc widen the inferred root and
+    // silently relocate output to build/main/main/main.js -- no error, and the
+    // dev-server's spawn path plus package.json `main` both break.
+    "rootDir": ".",
     "outDir": "../../build/main",
-    "allowJs": true,
-    "noImplicitAny": false,
+    "types": ["node"]
   },
   "exclude": ["static"]
 }

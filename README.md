@@ -1,77 +1,146 @@
-<div align="center"> 
+# Screen Analyzer
 
-# Electron Vue Template
-  
-<img width="794" alt="image" src="https://user-images.githubusercontent.com/32544586/222748627-ee10c9a6-70d2-4e21-b23f-001dd8ec7238.png">
+A desktop overlay for online meetings. It floats above your other windows, reads
+your screen with an AI model on a keypress, and transcribes call audio live —
+while staying **invisible to anyone you are screen-sharing with**.
 
-A simple starter template for a **Vue3** + **Electron** TypeScript based application, including **ViteJS** and **Electron Builder**.
-</div>
+Two independent features:
 
-## About
+| Feature            | Trigger                  | Provider                                  |
+| ------------------ | ------------------------ | ----------------------------------------- |
+| Screen analysis    | <kbd>F5</kbd> or Capture | OpenAI, `gpt-5.6-terra` by default        |
+| Live transcription | Start button             | Gemini Live, `gemini-3.5-transcribe-live` |
 
-This template utilizes [ViteJS](https://vitejs.dev) for building and serving your (Vue powered) front-end process, it provides Hot Reloads (HMR) to make development fast and easy ⚡ 
+They share no state and neither feeds the other.
 
-Building the Electron (main) process is done with [Electron Builder](https://www.electron.build/), which makes your application easily distributable and supports cross-platform compilation 😎
+## The invisible layer
 
-## Getting started
+The core of this app is one line in
+[`src/main/window/overlay-window.ts`](src/main/window/overlay-window.ts):
 
-Click the green **Use this template** button on top of the repository, and clone your own newly created repository.
+```ts
+window.setContentProtection(true);
+```
 
-**Or..**
+That maps to `NSWindowSharingNone` on macOS and `WDA_EXCLUDEFROMCAPTURE` on
+Windows, which excludes the window from every screen-capture path — Zoom, Meet,
+Teams, QuickTime, `screencapture`, and the app's own `desktopCapturer` calls.
+The overlay stays visible on your physical display only.
 
-Clone this repository: `git clone git@github.com:Deluze/electron-vue-template.git`
+**If you change anything in `src/main/window/`, re-verify against a real screen
+share before trusting it.** That file documents four traps that have already
+caused regressions once; read its header comment first.
 
+## Setup
 
-### Install dependencies ⏬
+Requires Node 22+ and macOS 13.2+ for driver-free system-audio capture.
 
 ```bash
 npm install
-```
-
-### Start developing ⚒️
-
-```bash
+cp .env.example .env.local   # then add your keys
 npm run dev
 ```
 
-## Additional Commands
+You need at least one key; each feature degrades independently if its key is
+missing, and the UI tells you which one.
+
+- `OPENAI_API_KEY` — https://platform.openai.com/api-keys
+- `GEMINI_API_KEY` — https://aistudio.google.com/apikey (a plain API key; no
+  service account or JSON credentials file)
+
+See [`.env.example`](.env.example) for the optional model, prompt, resolution
+and log-level overrides.
+
+### macOS permissions
+
+Both features need permission grants under **System Settings › Privacy &
+Security**:
+
+- **Screen Recording** — for screenshots _and_ for system-audio capture, which
+  macOS only exposes through the screen-sharing pipeline.
+- **Microphone** — only for the fallback audio path.
+
+Without Screen Recording, captures come back empty and transcription falls back
+to a microphone.
+
+### Audio capture
+
+System audio is captured natively via `getDisplayMedia({ audio: 'loopback' })`,
+so **BlackHole is not required**. If loopback is unavailable or returns silence
+the app automatically falls back to a BlackHole virtual device, then to the
+default input. The transcription panel shows which path is live.
+
+## Shortcuts
+
+| Key                           | Action                           |
+| ----------------------------- | -------------------------------- |
+| <kbd>F5</kbd>                 | Capture and analyze              |
+| <kbd>F6</kbd>                 | Move overlay right 200px         |
+| <kbd>Ctrl</kbd>+<kbd>F6</kbd> | Move overlay left 200px          |
+| <kbd>Ctrl</kbd>+arrows        | Move overlay 50px (when focused) |
+
+<kbd>F5</kbd>, <kbd>F6</kbd> and <kbd>Ctrl</kbd>+<kbd>F6</kbd> are global and
+claimed while the app runs. The title bar is draggable.
+
+## Commands
 
 ```bash
-npm run dev # starts application with hot reload
-npm run build # builds application, distributable files can be found in "dist" folder
-
-# OR
-
-npm run build:win # uses windows as build target
-npm run build:mac # uses mac as build target
-npm run build:linux # uses linux as build target
+npm run dev          # Vite HMR for the renderer, auto-restart for main
+npm run typecheck    # tsc over main, vue-tsc over renderer
+npm run lint         # ESLint
+npm run format       # Prettier
+npm run build        # typecheck, then build, then electron-builder
+npm run build:mac    # or :win / :linux
 ```
 
-Optional configuration options can be found in the [Electron Builder CLI docs](https://www.electron.build/cli.html).
-## Project Structure
+## Layout
 
-```bash
-- scripts/ # all the scripts used to build or serve your application, change as you like.
-- src/
-  - main/ # Main thread (Electron application source)
-  - renderer/ # Renderer thread (VueJS application source)
+```
+src/
+  main/
+    main.ts                    app lifecycle and wiring only
+    config.ts                  env loading, models, prompts, tunables
+    paths.ts                   preload path (see its comment before moving it)
+    logger.ts                  leveled logging
+    shared/ipc.ts              channel constants + payload types
+    window/
+      overlay-window.ts        the invisible layer
+      shortcuts.ts             global and window-local keys
+      security.ts              CSP, permissions, navigation guards
+    ipc/register.ts            all ipcMain handlers
+    services/
+      screen-capture.ts        desktopCapturer
+      screenshot-analysis.ts   OpenAI Responses API
+      transcription/           Gemini Live session + loopback handler
+    preload.ts                 contextBridge surface
+  renderer/
+    components/{ui,screenshots,transcription}/
+    composables/               state and side effects
+    styles/                    tokens.css + base.css
+    public/pcm-worklet.js      Float32 to 16-bit PCM, off the main thread
 ```
 
-## Using static files
+### Notes for future changes
 
-If you have any files that you want to copy over to the app directory after installation, you will need to add those files in your `src/main/static` directory.
+- **The preload is bundled by Vite**, not emitted by tsc
+  ([`vite.preload.config.mjs`](vite.preload.config.mjs)). It runs sandboxed, and
+  a sandboxed preload cannot `require` a relative file — bundling is what lets
+  it share `shared/ipc.ts` with the main process. `src/main/tsconfig.build.json`
+  excludes it for exactly this reason.
+- **`shared/ipc.ts` lives under `src/main/` on purpose.** Moving it to a sibling
+  `src/shared/` widens the `rootDir` tsc infers and silently relocates output to
+  `build/main/main/main.js` — no compiler error, but the dev server and the
+  packaged entry point both break.
+- **The renderer's `window.electronAPI` type is derived** from `typeof api` in
+  the preload, so it cannot drift from the implementation.
+- Model output is rendered as HTML through DOMPurify in
+  `composables/useMarkdown.ts`. That is the only `v-html` site, and
+  `vue/no-v-html` is an error everywhere else.
+- API keys never reach the renderer; all provider calls happen in the main
+  process.
+- Packaged builds read `<userData>/.env`, not `.env.local` — a GUI launch
+  inherits no shell environment, and `app.asar` is not writable.
 
-Files in said directory are only accessible to the `main` process, similar to `src/renderer/assets` only being accessible to the `renderer` process. Besides that, the concept is the same as to what you're used to in your other front-end projects.
+## License
 
-#### Referencing static files from your main process
-
-```ts
-/* Assumes src/main/static/myFile.txt exists */
-
-import {app} from 'electron';
-import {join} from 'path';
-import {readFileSync} from 'fs';
-
-const path = join(app.getAppPath(), 'static', 'myFile.txt');
-const buffer = readFileSync(path);
-```
+MIT
