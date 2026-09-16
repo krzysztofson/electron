@@ -8,9 +8,9 @@ import TranscriptionPanel from "@/components/transcription/TranscriptionPanel.vu
 /**
  * Layout shell only.
  *
- * Screen analysis and transcription are two independent features -- they share
- * no state and neither feeds the other. `presetId` lives here because both
- * the header (to select it) and the screenshot panel (to use it) need it.
+ * Screen analysis and transcription are two independent features -- neither's
+ * capture/analyze lifecycle feeds the other. `presetId` lives here because
+ * the header (to select it) and both panels (to answer with it) need it.
  */
 const { status } = useAppStatus();
 const { presetId } = usePresetSelection(status);
@@ -27,6 +27,8 @@ const { presetId } = usePresetSelection(status);
     <div class="layout__transcription">
       <TranscriptionPanel
         :configured="status?.transcriptionConfigured ?? false"
+        :openai-configured="status?.analysisConfigured ?? false"
+        :preset-id="presetId"
       />
     </div>
   </main>

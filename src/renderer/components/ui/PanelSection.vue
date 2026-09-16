@@ -1,12 +1,60 @@
 <script setup lang="ts">
+import { onMounted, onUnmounted, ref } from "vue";
+
 /** A titled, scrollable section. Both features are laid out with this. */
-defineProps<{
+const props = defineProps<{
   title: string;
   /** Small count/badge next to the title. */
   badge?: string | number;
   /** Let the body take remaining vertical space and scroll. */
   grow?: boolean;
+  /**
+   * Auto-scroll to the newest content as it grows -- e.g. new transcript
+   * lines. Suspended while the user has scrolled up to read something older,
+   * so a live feed does not yank the view out from under them.
+   */
+  stickToBottom?: boolean;
 }>();
+
+/** Within this many px of the bottom still counts as "at the bottom" -- exact
+ *  equality is too strict once fractional scroll heights are involved. */
+const BOTTOM_THRESHOLD_PX = 24;
+
+const bodyEl = ref<HTMLElement | null>(null);
+const contentEl = ref<HTMLElement | null>(null);
+let stuckToBottom = true;
+let resizeObserver: ResizeObserver | null = null;
+
+function isNearBottom(el: HTMLElement): boolean {
+  return (
+    el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_THRESHOLD_PX
+  );
+}
+
+function handleScroll(): void {
+  if (bodyEl.value) stuckToBottom = isNearBottom(bodyEl.value);
+}
+
+onMounted(() => {
+  if (!props.stickToBottom) return;
+  const body = bodyEl.value;
+  const content = contentEl.value;
+  if (!body || !content) return;
+
+  body.addEventListener("scroll", handleScroll, { passive: true });
+  // The body's own box size is fixed by the surrounding flex layout -- it's
+  // the *content* growing past that box that changes `scrollHeight`, so the
+  // inner wrapper is what needs observing, not the scroll container itself.
+  resizeObserver = new ResizeObserver(() => {
+    if (stuckToBottom) body.scrollTop = body.scrollHeight;
+  });
+  resizeObserver.observe(content);
+});
+
+onUnmounted(() => {
+  bodyEl.value?.removeEventListener("scroll", handleScroll);
+  resizeObserver?.disconnect();
+});
 </script>
 
 <template>
@@ -20,8 +68,10 @@ defineProps<{
         <slot name="actions" />
       </div>
     </header>
-    <div class="panel__body">
-      <slot />
+    <div ref="bodyEl" class="panel__body">
+      <div ref="contentEl" class="panel__content">
+        <slot />
+      </div>
     </div>
   </section>
 </template>
@@ -72,11 +122,14 @@ defineProps<{
 }
 
 .panel__body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
   min-height: 0;
   padding: 0 var(--space-3) var(--space-3);
   overflow-y: auto;
+}
+
+.panel__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 </style>
