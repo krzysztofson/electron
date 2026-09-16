@@ -75,6 +75,29 @@ export const ANALYSIS_PRESETS: readonly AnalysisPreset[] = [
   },
 ];
 
+/**
+ * Shared by every preset when answering a live-transcription line rather than
+ * a screenshot. The screenshot base instructions assume something is visible
+ * on screen; a transcript line is spoken text that may be mid-sentence or
+ * garbled by the speech model, so this version asks for a judgment call
+ * instead.
+ */
+export const TRANSCRIPT_BASE_INSTRUCTIONS = [
+  "You are a silent assistant during a live technical interview. The text",
+  "below is one line of a live transcription of what the interviewer just",
+  "said -- treat it as the question to answer, even though it may contain",
+  "transcription errors or be a sentence fragment.",
+  "",
+  "- Lead with the answer. No preamble, no restating the question, never",
+  '  "I heard...".',
+  "- Be terse: your output renders in a narrow sidebar. Tight bullets over",
+  "  prose.",
+  "- Use fenced code blocks with a language tag.",
+  "- If the line is not actually a question, or is too garbled to answer,",
+  "  say so in one short line instead of guessing.",
+  "- Never invent details you cannot infer from the line itself.",
+].join("\n");
+
 const PRESET_BY_ID = new Map(
   ANALYSIS_PRESETS.map((preset) => [preset.id, preset]),
 );
@@ -90,6 +113,16 @@ export function buildInstructions(presetId: string | undefined): string {
   return preset.addendum
     ? `${BASE_INSTRUCTIONS}\n\n${preset.addendum}`
     : BASE_INSTRUCTIONS;
+}
+
+/** Same idea as {@link buildInstructions}, for a transcript line instead of a screenshot. */
+export function buildTranscriptInstructions(
+  presetId: string | undefined,
+): string {
+  const preset = resolvePreset(presetId);
+  return preset.addendum
+    ? `${TRANSCRIPT_BASE_INSTRUCTIONS}\n\n${preset.addendum}`
+    : TRANSCRIPT_BASE_INSTRUCTIONS;
 }
 
 /** What the renderer is allowed to know about presets: id and label only. */

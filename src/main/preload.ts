@@ -6,6 +6,7 @@ import {
   type AnalysisChunk,
   type AnalysisResult,
   type AnalyzeScreenshotRequest,
+  type AnswerTranscriptLineRequest,
   type AppStatus,
   type AskFollowUpRequest,
   type CapturedScreenshot,
@@ -55,6 +56,11 @@ const api = {
 
   askFollowUp: (request: AskFollowUpRequest): Promise<AnalysisResult> =>
     ipcRenderer.invoke(InvokeChannel.AskFollowUp, request),
+
+  answerTranscriptLine: (
+    request: AnswerTranscriptLineRequest,
+  ): Promise<AnalysisResult> =>
+    ipcRenderer.invoke(InvokeChannel.AnswerTranscriptLine, request),
 
   startTranscription: (): Promise<void> =>
     ipcRenderer.invoke(InvokeChannel.StartTranscription),

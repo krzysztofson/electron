@@ -4,14 +4,19 @@ A desktop overlay for online meetings. It floats above your other windows, reads
 your screen with an AI model on a keypress, and transcribes call audio live —
 while staying **invisible to anyone you are screen-sharing with**.
 
-Two independent features:
+Two independent features, plus a third that bridges them:
 
-| Feature            | Trigger                  | Provider                                  |
-| ------------------ | ------------------------ | ----------------------------------------- |
-| Screen analysis    | <kbd>F5</kbd> or Capture | OpenAI, `gpt-5.6-terra` by default        |
-| Live transcription | Start button             | Gemini Live, `gemini-3.5-transcribe-live` |
+| Feature            | Trigger                                         | Provider                                  |
+| ------------------ | ----------------------------------------------- | ----------------------------------------- |
+| Screen analysis    | <kbd>F5</kbd> or Capture                        | OpenAI, `gpt-5.6-terra` by default        |
+| Live transcription | Start button                                    | Gemini Live, `gemini-3.5-transcribe-live` |
+| Speech answers     | "Get answer" per line, or the Auto-reply toggle | OpenAI, `gpt-5.6-luna` by default         |
 
-They share no state and neither feeds the other.
+Screen analysis and live transcription share no state and neither feeds the
+other. Speech answers is transcription's own follow-on step: it reads a
+transcribed line as the question and answers it via OpenAI, defaulting to the
+cheapest/fastest model tier since it's a live back-and-forth rather than a
+one-off F5 press.
 
 ## The invisible layer
 

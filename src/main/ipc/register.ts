@@ -8,12 +8,14 @@ import {
   SendChannel,
   type AnalysisResult,
   type AnalyzeScreenshotRequest,
+  type AnswerTranscriptLineRequest,
   type AppStatus,
   type AskFollowUpRequest,
 } from "../shared/ipc";
 import { captureCurrentScreen } from "../services/screen-capture";
 import {
   analyzeScreenshot,
+  answerTranscriptLine,
   askFollowUp,
 } from "../services/screenshot-analysis";
 import { transcriptionService } from "../services/transcription/gemini-live";
@@ -39,6 +41,8 @@ export function registerIpcHandlers(): void {
       transcriptionConfigured: Boolean(config.geminiApiKey),
       analysisModel: config.analysisModel,
       transcriptionModel: config.transcriptionModel,
+      openaiTranscriptAnswerModel: config.openaiTranscriptAnswerModel,
+      geminiTranscriptAnswerModel: config.geminiTranscriptAnswerModel,
       presets: listPresetSummaries(),
       defaultPresetId: config.analysisPreset,
     };
@@ -64,6 +68,21 @@ export function registerIpcHandlers(): void {
         request.previousResponseId,
         request.question,
         request.presetId,
+        (delta) =>
+          sendToOverlay(EventChannel.AnalysisChunk, {
+            analysisId: request.analysisId,
+            delta,
+          }),
+      ),
+  );
+
+  ipcMain.handle(
+    InvokeChannel.AnswerTranscriptLine,
+    (_event, request: AnswerTranscriptLineRequest): Promise<AnalysisResult> =>
+      answerTranscriptLine(
+        request.question,
+        request.presetId,
+        request.provider,
         (delta) =>
           sendToOverlay(EventChannel.AnalysisChunk, {
             analysisId: request.analysisId,

@@ -1,9 +1,13 @@
 import OpenAI from "openai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { config, type ImageDetail } from "../config";
 import { createLogger, errorMessage } from "../logger";
-import { buildInstructions } from "../analysis-presets";
+import {
+  buildInstructions,
+  buildTranscriptInstructions,
+} from "../analysis-presets";
 import { resizeDataUrlToPatchBudget } from "./image-budget";
-import type { AnalysisResult } from "../shared/ipc";
+import type { AnalysisResult, TranscriptAnswerProvider } from "../shared/ipc";
 
 const log = createLogger("screenshot-analysis");
 
@@ -28,6 +32,24 @@ function getClient(): OpenAI {
     clientKey = apiKey;
   }
   return client;
+}
+
+let geminiClient: GoogleGenAI | null = null;
+let geminiClientKey = "";
+
+/** Same lazy-rebuild reasoning as `getClient()` above, for the Gemini side. */
+function getGeminiClient(): GoogleGenAI {
+  const apiKey = config.geminiApiKey;
+  if (!apiKey) {
+    throw new Error(
+      "GEMINI_API_KEY is not set. Add it to .env.local (development) or to the .env file in the app's user-data directory.",
+    );
+  }
+  if (!geminiClient || geminiClientKey !== apiKey) {
+    geminiClient = new GoogleGenAI({ apiKey });
+    geminiClientKey = apiKey;
+  }
+  return geminiClient;
 }
 
 export type AnalysisDeltaHandler = (delta: string) => void;
@@ -85,6 +107,7 @@ export async function analyzeScreenshot(
 
   return runStream(
     {
+      model: config.analysisModel,
       instructions: buildInstructions(presetId),
       input: [{ role: "user", content }],
     },
@@ -108,6 +131,7 @@ export async function askFollowUp(
 
   return runStream(
     {
+      model: config.analysisModel,
       instructions: buildInstructions(presetId),
       input: question,
       previous_response_id: previousResponseId,
@@ -116,12 +140,94 @@ export async function askFollowUp(
   );
 }
 
+/**
+ * Answer one line of a live transcript, standalone -- no image, and no
+ * `previous_response_id` since each line is its own question rather than a
+ * thread the way screenshot follow-ups are.
+ *
+ * THROWS on failure, same contract as `analyzeScreenshot` above.
+ */
+export async function answerTranscriptLine(
+  question: string,
+  presetId: string,
+  provider: TranscriptAnswerProvider,
+  onDelta: AnalysisDeltaHandler,
+): Promise<AnalysisResult> {
+  return provider === "gemini"
+    ? answerTranscriptLineWithGemini(question, presetId, onDelta)
+    : answerTranscriptLineWithOpenAI(question, presetId, onDelta);
+}
+
+async function answerTranscriptLineWithOpenAI(
+  question: string,
+  presetId: string,
+  onDelta: AnalysisDeltaHandler,
+): Promise<AnalysisResult> {
+  const model = config.openaiTranscriptAnswerModel;
+  log.info(`answering transcript line with ${model} (preset=${presetId})`);
+
+  return runStream(
+    {
+      model,
+      instructions: buildTranscriptInstructions(presetId),
+      input: question,
+    },
+    onDelta,
+  );
+}
+
+/**
+ * Same job as the OpenAI path above, over the Gemini API instead. LOW
+ * thinking effort for the same reason `DEFAULT_OPENAI_TRANSCRIPT_ANSWER_MODEL`
+ * defaults to the cheapest OpenAI tier: this is a latency-sensitive live
+ * back-and-forth, not a one-off screenshot analysis.
+ */
+async function answerTranscriptLineWithGemini(
+  question: string,
+  presetId: string,
+  onDelta: AnalysisDeltaHandler,
+): Promise<AnalysisResult> {
+  const model = config.geminiTranscriptAnswerModel;
+  log.info(`answering transcript line with ${model} (preset=${presetId})`);
+
+  const stream = await getGeminiClient().models.generateContentStream({
+    model,
+    contents: question,
+    config: {
+      systemInstruction: buildTranscriptInstructions(presetId),
+      maxOutputTokens: config.maxOutputTokens,
+      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+    },
+  });
+
+  let text = "";
+  let responseId = "";
+  for await (const chunk of stream) {
+    if (chunk.text) {
+      text += chunk.text;
+      onDelta(chunk.text);
+    }
+    if (chunk.responseId) responseId = chunk.responseId;
+  }
+
+  text = text.trim();
+  if (!text) {
+    throw new Error(`${model} returned an empty response.`);
+  }
+
+  log.debug(
+    `analysis complete, ${text.length} chars, responseId=${responseId || "none"}`,
+  );
+  return { responseId, text };
+}
+
 /** Structurally matches the SDK's response-content union; kept local to avoid a deep import. */
 type AnalysisContentPart =
   | { type: "input_image"; detail: ImageDetail; image_url: string }
   | { type: "input_text"; text: string };
 
 interface StreamParams {
+  model: string;
   instructions: string;
   input: string | Array<{ role: "user"; content: AnalysisContentPart[] }>;
   previous_response_id?: string;
@@ -131,7 +237,7 @@ async function runStream(
   params: StreamParams,
   onDelta: AnalysisDeltaHandler,
 ): Promise<AnalysisResult> {
-  const model = config.analysisModel;
+  const { model } = params;
 
   const stream = getClient().responses.stream({
     model,

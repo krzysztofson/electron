@@ -19,6 +19,7 @@ export const InvokeChannel = {
   AskFollowUp: "screen:follow-up",
   StartTranscription: "transcription:start",
   StopTranscription: "transcription:stop",
+  AnswerTranscriptLine: "transcription:answer",
 } as const;
 
 /**
@@ -48,9 +49,19 @@ export interface AppStatus {
   transcriptionConfigured: boolean;
   analysisModel: string;
   transcriptionModel: string;
+  /** Model used for each transcript answer provider -- see `TranscriptAnswerProvider`. */
+  openaiTranscriptAnswerModel: string;
+  geminiTranscriptAnswerModel: string;
   presets: AnalysisPresetSummary[];
   defaultPresetId: string;
 }
+
+/**
+ * Which model answers a transcript line. "gemini" reuses `GEMINI_API_KEY` --
+ * the same key `transcriptionConfigured` above reports on -- since live
+ * transcription already requires it.
+ */
+export type TranscriptAnswerProvider = "openai" | "gemini";
 
 export interface AnalysisPresetSummary {
   id: string;
@@ -78,6 +89,14 @@ export interface AskFollowUpRequest {
   previousResponseId: string;
   question: string;
   presetId: string;
+}
+
+/** Answer one live-transcription line, standalone -- see `AskFollowUpRequest` for the threaded equivalent. */
+export interface AnswerTranscriptLineRequest {
+  analysisId: string;
+  question: string;
+  presetId: string;
+  provider: TranscriptAnswerProvider;
 }
 
 /**

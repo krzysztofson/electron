@@ -8,6 +8,24 @@ const log = createLogger("config");
 /** Latest cost/capability-balanced OpenAI vision model. Override: OPENAI_MODEL. */
 export const DEFAULT_ANALYSIS_MODEL = "gpt-5.6-terra";
 
+/**
+ * Answering a live-transcription line is latency-sensitive in a way
+ * screenshot analysis is not -- it's a back-and-forth during a live
+ * conversation, not a one-off F5 press -- and never needs vision, so this
+ * defaults to the cheapest/fastest tier rather than reusing the screenshot
+ * model. Used when the transcript answer provider is "openai".
+ * Override: OPENAI_TRANSCRIPT_MODEL.
+ */
+export const DEFAULT_OPENAI_TRANSCRIPT_ANSWER_MODEL = "gpt-5.6-luna";
+
+/**
+ * Gemini alternative for the same job, for the "gemini" transcript answer
+ * provider. Paired with a LOW thinking level (see screenshot-analysis.ts) for
+ * the same reason: a live back-and-forth values speed over the deeper
+ * reasoning a transcript one-liner rarely needs. Override: GEMINI_TRANSCRIPT_MODEL.
+ */
+export const DEFAULT_GEMINI_TRANSCRIPT_ANSWER_MODEL = "gemini-3.8-flash";
+
 /** One of the Responses API's `ImageDetail` values, checked at read time. */
 const VALID_IMAGE_DETAILS = ["original", "high", "low", "auto"] as const;
 export type ImageDetail = (typeof VALID_IMAGE_DETAILS)[number];
@@ -95,6 +113,18 @@ export const config = {
   },
   get analysisModel(): string {
     return process.env.OPENAI_MODEL?.trim() || DEFAULT_ANALYSIS_MODEL;
+  },
+  get openaiTranscriptAnswerModel(): string {
+    return (
+      process.env.OPENAI_TRANSCRIPT_MODEL?.trim() ||
+      DEFAULT_OPENAI_TRANSCRIPT_ANSWER_MODEL
+    );
+  },
+  get geminiTranscriptAnswerModel(): string {
+    return (
+      process.env.GEMINI_TRANSCRIPT_MODEL?.trim() ||
+      DEFAULT_GEMINI_TRANSCRIPT_ANSWER_MODEL
+    );
   },
   get transcriptionModel(): string {
     return (
